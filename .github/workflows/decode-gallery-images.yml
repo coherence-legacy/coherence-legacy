@@ -1,0 +1,60 @@
+name: Decode gallery images once
+on:
+  push:
+    branches: [place-unused-images]
+permissions:
+  contents: write
+jobs:
+  decode:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Decode base64 images, remove unused files and this workflow
+        run: |
+          python3 << 'PY'
+          import base64, pathlib, sys
+          root = pathlib.Path('01-pages/images')
+          found = list(root.glob('*.jpg.b64'))
+          if not found:
+              print('no b64 files')
+              sys.exit(0)
+          for p in found:
+              dest = p.with_suffix('')  # .jpg.b64 -> .jpg
+              data = base64.b64decode(p.read_text())
+              if data[:3] != b'\xff\xd8\xff':
+                  raise SystemExit(f'not a jpeg after decode: {p}')
+              dest.write_bytes(data)
+              p.unlink()
+              print(f'wrote {dest} {len(data)} bytes')
+          probe = root / '_probe.jpg'
+          if probe.exists():
+              probe.unlink()
+              print('removed _probe.jpg')
+          unused = [
+              'Silent_Fire_Ranch_Rammed_Earth2.jpg',
+              'Thrive-alist_Header.jpg',
+              'LRR_WEB_Images4.jpg',
+              'Rajyo_Portrait.jpg',
+          ]
+          for name in unused:
+              p = root / name
+              if p.exists():
+                  p.unlink()
+                  print(f'removed unused {p}')
+              else:
+                  print(f'unused not present: {p}')
+          wf = pathlib.Path('.github/workflows/decode-gallery-images.yml')
+          if wf.exists():
+              wf.unlink()
+              print('removed decode workflow')
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no changes"
+            exit 0
+          fi
+          git commit -m "Decode optimized gallery images and remove unused files"
+          git push
