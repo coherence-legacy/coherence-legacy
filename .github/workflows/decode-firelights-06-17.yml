@@ -1,0 +1,51 @@
+name: Decode firelights 06-17 once
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  decode:
+    if: github.actor != 'github-actions[bot]'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Decode firelights-06 to 17, remove payloads and this workflow
+        run: |
+          python3 << 'PY'
+          import base64, pathlib, sys
+          root = pathlib.Path('01-pages/images')
+          names = [f'firelights-{i:02d}.jpg.b64' for i in range(6, 18)]
+          found = [root / n for n in names if (root / n).exists()]
+          if not found:
+              print('no firelights 06-17 b64 files')
+              sys.exit(0)
+          for p in found:
+              dest = p.with_suffix('')  # .jpg.b64 -> .jpg
+              data = base64.b64decode(p.read_text())
+              if data[:3] != b'\xff\xd8\xff':
+                  raise SystemExit(f'not a jpeg after decode: {p}')
+              dest.write_bytes(data)
+              p.unlink()
+              print(f'wrote {dest} {len(data)} bytes')
+          probe = root / '_probe.jpg'
+          if probe.exists():
+              probe.unlink()
+              print('removed _probe.jpg')
+          wf = pathlib.Path('.github/workflows/decode-firelights-06-17.yml')
+          if wf.exists():
+              wf.unlink()
+              print('removed decode workflow')
+          PY
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "no changes"
+            exit 0
+          fi
+          git commit -m "Decode firelights-06 through firelights-17 to JPEG"
+          git pull --rebase origin main
+          git push
